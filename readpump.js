@@ -1,5 +1,6 @@
 "use strict"
 
+const colors = require("colors");
 var async = require("async");
 var opcua = require("node-opcua");
 
@@ -13,16 +14,36 @@ function ReadPump(config, measurements, writepump) {
     this.monitoredMeasurements = [];
     this.writepump = writepump;
     this.poller;
+	
+	console.log("============ ReadPump ============");
+	console.log(measurements);
 }
 
 ReadPump.prototype.ConnectOPCUA = function(callback) {
     let self = this;
-    this.uaClient = new opcua.OPCUAClient();
-    self.uaClient.connect(self.uaServerUrl, function(err) {
+	
+	const options =
+	{
+		endpoint_must_exist: false,
+		keepSessionAlive: true,
+		connectionStrategy:
+		{
+			maxRetry: 10,
+			initialDelay: 2000,
+			maxDelay: 10*1000
+		}
+	};	
+    this.uaClient = new opcua.OPCUAClient(options);
+
+	console.log(" connecting to ", self.uaServerUrl.cyan.bold);
+	console.log("    strategy", this.uaClient.connectionStrategy, ".".cyan.bold);
+
+		self.uaClient.connect(self.uaServerUrl, function(err) {
         if (err) {
             callback(err);
             return;
         }
+		console.log("uaClient.createSession");
         self.uaClient.createSession(function(err, session) {
             if (err) {
                 callback(err);
@@ -122,6 +143,7 @@ ReadPump.prototype.StartMonitoring = function(callback) {
             uaMonitoredItem.on("changed", function(dataValue) {
                 let p = dataValueToPoint(m, dataValue);
                 if (PointIsValid(p) && PointMatchesType(p)) {
+					// console.log("call writepump.AddPointsToBuffer for ", [p]);
                     self.writepump.AddPointsToBuffer([p]);
                 } else {
                     console.log("Invalid point returned from subscription.", PointIsValid(p), PointMatchesType(p));
@@ -318,11 +340,13 @@ ReadPump.prototype.Run = function(callback) {
     async.waterfall([
             // connect opc
             function(waterfall_next) {
-                self.ConnectOPCUA(waterfall_next)
+                console.log("----> 1");
+				self.ConnectOPCUA(waterfall_next)
             },
             // Start both the monitoring and the polling of the measurments.
             // In case of an error, close everything.
             function(waterfall_next) {
+				console.log("----> 2");
                 self.uaClient.on("close", function () {
                     console.log("close and abort");
                     if (!reconnectErrorCalled) {
